@@ -1,0 +1,1624 @@
+DOCTYPE html
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Velociread - RSVP Speed Reader</title>
+  
+  <!-- iOS Web App Meta Tags -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Velociread">
+  <meta name="theme-color" content="#000000">
+
+  <!-- Google Fonts for premium typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- External Parsers via CDN (Fully Client-Side Extraction) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+  <style>
+    :root {
+      /* Theme 1: OLED Pure Dark (Default) */
+      --bg-oled: #000000;
+      --bg-card-oled: #121214;
+      --bg-input-oled: #1a1a1e;
+      --text-oled: #f3f4f6;
+      --text-secondary-oled: #9ca3af;
+      --border-oled: #27272a;
+      --primary-oled: #0A84FF;
+      --primary-active-oled: #0066CC;
+      --accent-red-oled: #FF453A;
+      --guide-oled: rgba(255, 69, 58, 0.4);
+      --card-shadow-oled: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+
+      /* Theme 2: Light */
+      --bg-light: #F2F2F7;
+      --bg-card-light: #FFFFFF;
+      --bg-input-light: #F2F2F7;
+      --text-light: #1C1C1E;
+      --text-secondary-light: #6C6C70;
+      --border-light: #E5E5EA;
+      --primary-light: #007AFF;
+      --primary-active-light: #0056B3;
+      --accent-red-light: #FF3B30;
+      --guide-light: rgba(255, 59, 48, 0.45);
+      --card-shadow-light: 0 8px 24px 0 rgba(0, 0, 0, 0.05);
+
+      /* Theme 3: Sepia */
+      --bg-sepia: #F4ECD8;
+      --bg-card-sepia: #FAF6EB;
+      --bg-input-sepia: #EFE4CC;
+      --text-sepia: #433422;
+      --text-secondary-sepia: #8A765D;
+      --border-sepia: #E4D8BE;
+      --primary-sepia: #A05A2C;
+      --primary-active-sepia: #783E1C;
+      --accent-red-sepia: #C83B2B;
+      --guide-sepia: rgba(200, 59, 43, 0.4);
+      --card-shadow-sepia: 0 8px 24px 0 rgba(67, 52, 34, 0.08);
+
+      /* Active values (defaults to OLED Dark) */
+      --bg: var(--bg-oled);
+      --bg-card: var(--bg-card-oled);
+      --bg-input: var(--bg-input-oled);
+      --text: var(--text-oled);
+      --text-secondary: var(--text-secondary-oled);
+      --border: var(--border-oled);
+      --primary: var(--primary-oled);
+      --primary-active: var(--primary-active-oled);
+      --accent-red: var(--accent-red-oled);
+      --guide: var(--guide-oled);
+      --card-shadow: var(--card-shadow-oled);
+
+      /* Dynamic Values */
+      --rsvp-font-size: 3.5rem;
+
+      /* Safe Areas */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      background-color: #000000;
+    }
+
+    /* Core Layout */
+    #app {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      background-color: var(--bg);
+      color: var(--text);
+      transition: background-color 0.4s cubic-bezier(0.16, 1, 0.3, 1), color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* Font configurations */
+    #app.font-sans {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #app.font-mono {
+      font-family: 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+    }
+
+    /* Views container */
+    .view {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: calc(1.5rem + var(--safe-top)) calc(1.5rem + var(--safe-right)) calc(1.5rem + var(--safe-bottom)) calc(1.5rem + var(--safe-left));
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .view.hidden {
+      display: none !important;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    /* VISTA CONFIGURACION Styles */
+    #config-view {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      gap: 1.5rem;
+    }
+
+    .header-section {
+      text-align: center;
+      margin-bottom: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .header-section h1 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, var(--text) 30%, var(--primary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.25rem;
+    }
+
+    .header-section p {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    /* Cards */
+    .card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1.25rem;
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      transition: background-color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    /* Textarea & File Action Box */
+    .textarea-container {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 220px;
+      min-height: 200px;
+    }
+
+    .textarea-container textarea {
+      width: 100%;
+      height: 100%;
+      background-color: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1rem;
+      font-size: 1rem;
+      line-height: 1.5;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+      -webkit-user-select: text;
+      user-select: text;
+      transition: background-color 0.4s ease, border-color 0.3s ease, color 0.4s ease;
+    }
+
+    .textarea-container textarea:focus {
+      border-color: var(--primary);
+    }
+
+    .textarea-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.75rem;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .file-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .file-name-indicator {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      max-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .word-count-badge {
+      font-size: 0.75rem;
+      background-color: var(--bg-input);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.6rem;
+      border-radius: 20px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* Buttons Configuration */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: transform 0.1s ease, background-color 0.2s ease, opacity 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: #FFFFFF;
+      padding: 1rem 1.5rem;
+      font-size: 1.1rem;
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(10, 132, 255, 0.25);
+    }
+
+    .btn-primary:active {
+      background-color: var(--primary-active);
+    }
+
+    .btn-secondary {
+      background-color: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.6rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    .btn-secondary:active {
+      background-color: var(--border);
+    }
+
+    .btn-large {
+      width: 100%;
+      margin-top: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    /* Settings Sections */
+    .settings-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .setting-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .setting-label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .setting-value {
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    /* Range Slider Styling */
+    .slider-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    .slider-wrapper input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 8px;
+      border-radius: 4px;
+      background: var(--bg-input);
+      outline: none;
+      transition: background 0.3s;
+    }
+
+    /* Safari Slider Customization */
+    .slider-wrapper input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #FFFFFF;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      cursor: pointer;
+      border: 1px solid rgba(0, 0, 0, 0.04);
+      transition: transform 0.1s ease;
+    }
+
+    .slider-wrapper input[type="range"]::-webkit-slider-thumb:active {
+      transform: scale(1.15);
+    }
+
+    /* Pill Selection Controls */
+    .segmented-control {
+      display: flex;
+      background-color: var(--bg-input);
+      border: 1px solid var(--border);
+      padding: 3px;
+      border-radius: 12px;
+      width: 100%;
+    }
+
+    .segmented-control button {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 0.6rem;
+      border-radius: 9px;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: background-color 0.2s, color 0.2s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .segmented-control button.active {
+      background-color: var(--bg-card);
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Theme Pill Selection Controls */
+    .theme-selector-group {
+      display: flex;
+      gap: 0.75rem;
+      width: 100%;
+    }
+
+    .theme-pill-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.65rem 0.5rem;
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      background-color: var(--bg-input);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 500;
+      touch-action: manipulation;
+      transition: all 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .theme-pill-btn.active {
+      border-color: var(--primary);
+      color: var(--text);
+      background-color: var(--bg-card);
+    }
+
+    .theme-color-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+    }
+
+    .dot-light { background-color: #FFFFFF; }
+    .dot-oled { background-color: #000000; border-color: #27272a; }
+    .dot-sepia { background-color: #F4ECD8; }
+
+    /* HELP ACCORDION Styles */
+    .help-card {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .accordion-trigger {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 1.25rem;
+      cursor: pointer;
+      text-align: left;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .accordion-trigger .chevron {
+      transition: transform 0.3s ease;
+      color: var(--text-secondary);
+    }
+
+    .accordion-trigger.active .chevron {
+      transform: rotate(180deg);
+    }
+
+    .accordion-content {
+      padding: 0 1.25rem 1.25rem 1.25rem;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .accordion-content ol {
+      margin-left: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .accordion-content ul {
+      margin-left: 1rem;
+      margin-top: 0.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      list-style-type: circle;
+    }
+
+    .accordion-content code {
+      font-family: 'JetBrains Mono', monospace;
+      background-color: var(--bg-input);
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+
+    /* VISTA LECTURA Styles */
+    #reading-view {
+      overflow: hidden;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Top stats and Close buttons */
+    .reading-header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      flex-shrink: 0;
+    }
+
+    .icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      opacity: 0.7;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: background-color 0.2s, opacity 0.2s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .icon-btn:active {
+      background-color: var(--bg-input);
+      opacity: 1;
+      transform: scale(0.92);
+    }
+
+    .progress-bar-container {
+      flex: 1;
+      height: 6px;
+      background-color: var(--bg-input);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background-color: var(--primary);
+      border-radius: 3px;
+      transition: width 0.15s ease-out;
+    }
+
+    .header-right-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .font-size-pills {
+      display: flex;
+      background-color: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .size-pill {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.75rem;
+      font-weight: 600;
+      width: 30px;
+      height: 26px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: background-color 0.2s;
+    }
+
+    .size-pill:active {
+      background-color: var(--bg-card);
+    }
+
+    .reading-stats-label {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      min-width: 60px;
+      text-align: right;
+    }
+
+    /* RSVP Display Container */
+    .rsvp-viewport {
+      width: 100%;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Center Vertical Guide Line */
+    .vertical-guide {
+      position: absolute;
+      left: 50%;
+      top: calc(50% - 70px);
+      height: 140px;
+      width: 2px;
+      background-color: var(--guide);
+      transform: translateX(-50%);
+      pointer-events: none;
+      z-index: 1;
+      transition: background-color 0.4s ease;
+    }
+
+    /* Guide tick marks */
+    .vertical-guide::before, .vertical-guide::after {
+      content: '';
+      position: absolute;
+      left: -4px;
+      width: 10px;
+      height: 2px;
+      background-color: var(--accent-red);
+    }
+    
+    .vertical-guide::before {
+      top: 0;
+    }
+    
+    .vertical-guide::after {
+      bottom: 0;
+    }
+
+    /* Word Box styling */
+    .rsvp-word-box {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 2;
+      font-size: var(--rsvp-font-size);
+      font-weight: 500;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    /* Center layout stabilization */
+    .izq {
+      flex: 1 1 50%;
+      text-align: right;
+      color: var(--text);
+      white-space: pre;
+    }
+
+    .orp {
+      flex: 0 0 auto;
+      color: var(--accent-red);
+      font-weight: 700;
+      text-align: center;
+      transition: color 0.4s ease;
+    }
+
+    .der {
+      flex: 1 1 50%;
+      text-align: left;
+      color: var(--text);
+      white-space: pre;
+    }
+
+    /* Controls Bar - Tactile & Premium styling */
+    .reading-footer-controls {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding-top: 1rem;
+      margin-bottom: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .control-btn-tactile {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 50%;
+      width: 54px;
+      height: 54px;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: transform 0.1s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s, border-color 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .control-btn-tactile:active {
+      transform: scale(0.9);
+      background-color: var(--bg-input);
+    }
+
+    .control-btn-tactile svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .control-btn-tactile.play-pause {
+      width: 72px;
+      height: 72px;
+      background-color: var(--primary);
+      border: none;
+      color: #FFFFFF;
+      box-shadow: 0 6px 20px rgba(10, 132, 255, 0.3);
+    }
+
+    .control-btn-tactile.play-pause:active {
+      background-color: var(--primary-active);
+      transform: scale(0.92);
+    }
+
+    .control-btn-tactile.play-pause svg {
+      width: 28px;
+      height: 28px;
+      fill: currentColor;
+    }
+
+    .btn-label-helper {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-top: 0.25rem;
+    }
+
+    .nav-btn-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* LOADING OVERLAY */
+    #loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      z-index: 10000;
+    }
+
+    #loading-msg {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #FFFFFF;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top: 4px solid var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Animation utility classes */
+    .fade-transition {
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    /* Hide element utility */
+    .hidden-element {
+      display: none !important;
+    }
+  </style>
+</head>
+<body class="theme-oled-dark">
+
+  <div id="app" class="theme-oled-dark font-sans">
+
+    <!-- CONFIGURATION VIEW -->
+    <div id="config-view" class="view">
+      <div class="header-section">
+        <h1>Velociread</h1>
+        <p>Lectura Rápida RSVP Optimizada</p>
+      </div>
+
+      <!-- PASTE AREA & FILE LOADER CARD -->
+      <div class="card">
+        <div class="textarea-container">
+          <textarea id="text-input" placeholder="Escribe o pega tu texto aquí..."></textarea>
+        </div>
+        <div class="textarea-footer">
+          <div class="file-actions">
+            <label for="file-upload" class="btn btn-secondary" style="margin: 0;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              Cargar Archivo
+            </label>
+            <!-- Accepts PDF, EPUB, DOCX, TXT -->
+            <input type="file" id="file-upload" accept=".txt,.pdf,.epub,.docx" style="display: none;">
+            <span id="file-name-label" class="file-name-indicator">Sin archivo cargado</span>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button id="clear-text-btn" class="btn btn-secondary" style="padding: 0.5rem 0.8rem;">Limpiar</button>
+            <span id="word-count-label" class="word-count-badge">0 palabras</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SETTINGS CONTROLS CARD -->
+      <div class="card">
+        <div class="settings-grid">
+          
+          <!-- PPM Slider -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Velocidad de Lectura</span>
+              <span id="ppm-val-display" class="setting-value">400 PPM</span>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="ppm-input" min="100" max="1000" step="25" value="400" aria-label="Velocidad en palabras por minuto">
+            </div>
+          </div>
+
+          <!-- Font Size Slider -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Tamaño de Letra</span>
+              <span id="font-size-val-display" class="setting-value">3.5rem</span>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="font-size-input" min="1.5" max="5.5" step="0.1" value="3.5" aria-label="Tamaño de letra en rem">
+            </div>
+          </div>
+
+          <!-- Font Type -->
+          <div class="setting-row">
+            <div class="setting-label">Tipo de Fuente</div>
+            <div class="segmented-control" id="font-ctrl-group">
+              <button type="button" class="active" data-font="sans">Sans-serif</button>
+              <button type="button" data-font="mono">Monoespaciada</button>
+            </div>
+          </div>
+
+          <!-- Theme -->
+          <div class="setting-row">
+            <div class="setting-label">Tema Visual</div>
+            <div class="theme-selector-group" id="theme-ctrl-group">
+              <button type="button" class="theme-pill-btn active" data-theme="oled-dark">
+                <span class="theme-color-dot dot-oled"></span>
+                <span>OLED</span>
+              </button>
+              <button type="button" class="theme-pill-btn" data-theme="light">
+                <span class="theme-color-dot dot-light"></span>
+                <span>Claro</span>
+              </button>
+              <button type="button" class="theme-pill-btn" data-theme="sepia">
+                <span class="theme-color-dot dot-sepia"></span>
+                <span>Sepia</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- OFFLINE ACCORDION HELP -->
+      <div class="card help-card">
+        <button type="button" class="accordion-trigger" id="help-toggle">
+          <span>💡 ¿Cómo usar en iPhone sin configurar servidor?</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+        <div class="accordion-content hidden-element" id="help-content">
+          <p>Dado que iOS restringe la ejecución de Javascript en archivos locales abiertos directamente desde la app de Archivos, tienes estas dos alternativas sencillas:</p>
+          <ol>
+            <li><strong>Usar la App gratuita "Documents de Readdle":</strong>
+              <ul>
+                <li>Descarga <strong>Documents</strong> de Readdle en el App Store.</li>
+                <li>Pásate este archivo <code>index.html</code> al iPhone (por AirDrop, Email, iCloud, etc.).</li>
+                <li>Ábrelo dentro de la app <strong>Documents</strong>. Su visor web integrado ejecuta Javascript sin limitaciones locales, permitiendo que la app funcione offline.</li>
+              </ul>
+            </li>
+            <li><strong>Guardar como App de Pantalla de Inicio (PWA):</strong>
+              <ul>
+                <li>Si tienes el archivo subido a una dirección web gratuita (como GitHub Pages o Vercel), ábrelo una vez en Safari.</li>
+                <li>Pulsa el botón <strong>Compartir</strong> en Safari y selecciona <strong>Añadir a pantalla de inicio</strong>.</li>
+                <li>Se creará un acceso directo que funciona como app nativa offline y con un rendimiento optimizado.</li>
+              </ul>
+            </li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- START BUTTON -->
+      <button id="start-reading-btn" class="btn btn-primary btn-large">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: middle;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Iniciar Lectura
+      </button>
+    </div>
+
+    <!-- READING VIEW -->
+    <div id="reading-view" class="view hidden">
+      <!-- Top controls & stats -->
+      <div class="reading-header">
+        <button id="exit-reading-btn" class="icon-btn" aria-label="Salir de la lectura">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+
+        <div class="progress-bar-container">
+          <div id="reading-progress-fill" class="progress-fill"></div>
+        </div>
+
+        <div class="header-right-controls">
+          <!-- Realtime Font Size Control inside reading -->
+          <div class="font-size-pills">
+            <button id="dec-font-btn" class="size-pill" aria-label="Reducir tamaño de letra">A-</button>
+            <button id="inc-font-btn" class="size-pill" aria-label="Aumentar tamaño de letra">A+</button>
+          </div>
+          <span id="reading-stats-txt" class="reading-stats-label">0 / 0</span>
+        </div>
+      </div>
+
+      <!-- Centered RSVP Word Box -->
+      <div class="rsvp-viewport">
+        <!-- Target visual guide -->
+        <div class="vertical-guide"></div>
+
+        <!-- Stable Word Align Container -->
+        <div id="rsvp-word-box" class="rsvp-word-box">
+          <span class="izq" id="word-left"></span>
+          <span class="orp" id="word-orp"></span>
+          <span class="der" id="word-right"></span>
+        </div>
+      </div>
+
+      <!-- Controls navigation -->
+      <div class="reading-footer-controls">
+        <!-- Back 5 -->
+        <div class="nav-btn-container">
+          <button id="prev-5-btn" class="control-btn-tactile" aria-label="Retroceder 5 palabras">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 19 2 12 11 5 11 19"></polygon><polygon points="22 19 13 12 22 5 22 19"></polygon></svg>
+          </button>
+          <span class="btn-label-helper">-5 PALABRAS</span>
+        </div>
+
+        <!-- Play / Pause -->
+        <div class="nav-btn-container">
+          <button id="play-pause-btn" class="control-btn-tactile play-pause" aria-label="Reproducir o Pausar">
+            <!-- Play icon SVG -->
+            <svg id="play-icon-svg" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+            <!-- Pause icon SVG -->
+            <svg id="pause-icon-svg" class="hidden-element" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+          </button>
+          <span class="btn-label-helper" id="play-pause-state-label">REPRODUCIR</span>
+        </div>
+
+        <!-- Forward 5 -->
+        <div class="nav-btn-container">
+          <button id="next-5-btn" class="control-btn-tactile" aria-label="Avanzar 5 palabras">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 19 22 12 13 5 13 19"></polygon><polygon points="2 19 11 12 2 5 2 19"></polygon></svg>
+          </button>
+          <span class="btn-label-helper">+5 PALABRAS</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- LOADING OVERLAY -->
+  <div id="loading-overlay" class="hidden-element">
+    <div class="spinner"></div>
+    <div id="loading-msg">Procesando archivo...</div>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // --- APP STATE ---
+      const state = {
+        text: '',
+        words: [],
+        currentIndex: 0,
+        isPlaying: false,
+        timerId: null,
+        ppm: 400,
+        font: 'sans',      // 'sans' | 'mono'
+        theme: 'oled-dark', // 'oled-dark' | 'light' | 'sepia'
+        fontSize: 3.5      // rem
+      };
+
+      // --- DEFAULT SEED TEXT ---
+      const defaultText = `La lectura rápida RSVP (Rapid Serial Visual Presentation) consiste en mostrar palabras en un mismo punto de la pantalla de forma sucesiva. Esto elimina el movimiento ocular (sacadas) y acelera la comprensión del texto. 
+
+Esta aplicación está optimizada para pantallas táctiles de iOS (Safari), con un alineamiento dinámico del Punto de Reconocimiento Óptimo (ORP) para asegurar estabilidad visual absoluta. 
+
+Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando en "Cargar Archivo", o bien borrar este texto y pegar el que tú quieras para comenzar. ¡Disfruta de la lectura!`;
+
+      // --- DOM ELEMENTS ---
+      const el = {
+        app: document.getElementById('app'),
+        configView: document.getElementById('config-view'),
+        readingView: document.getElementById('reading-view'),
+        textInput: document.getElementById('text-input'),
+        fileUpload: document.getElementById('file-upload'),
+        fileNameLabel: document.getElementById('file-name-label'),
+        clearTextBtn: document.getElementById('clear-text-btn'),
+        wordCountLabel: document.getElementById('word-count-label'),
+        ppmInput: document.getElementById('ppm-input'),
+        ppmValDisplay: document.getElementById('ppm-val-display'),
+        fontSizeInput: document.getElementById('font-size-input'),
+        fontSizeValDisplay: document.getElementById('font-size-val-display'),
+        fontCtrlGroup: document.getElementById('font-ctrl-group'),
+        themeCtrlGroup: document.getElementById('theme-ctrl-group'),
+        helpToggle: document.getElementById('help-toggle'),
+        helpContent: document.getElementById('help-content'),
+        startReadingBtn: document.getElementById('start-reading-btn'),
+        exitReadingBtn: document.getElementById('exit-reading-btn'),
+        readingProgressFill: document.getElementById('reading-progress-fill'),
+        readingStatsTxt: document.getElementById('reading-stats-txt'),
+        decFontBtn: document.getElementById('dec-font-btn'),
+        incFontBtn: document.getElementById('inc-font-btn'),
+        wordLeft: document.getElementById('word-left'),
+        wordOrp: document.getElementById('word-orp'),
+        wordRight: document.getElementById('word-right'),
+        prev5Btn: document.getElementById('prev-5-btn'),
+        playPauseBtn: document.getElementById('play-pause-btn'),
+        playIconSvg: document.getElementById('play-icon-svg'),
+        pauseIconSvg: document.getElementById('pause-icon-svg'),
+        playPauseStateLabel: document.getElementById('play-pause-state-label'),
+        next5Btn: document.getElementById('next-5-btn'),
+        loadingOverlay: document.getElementById('loading-overlay'),
+        loadingMsg: document.getElementById('loading-msg')
+      };
+
+      // Set initial seed text
+      el.textInput.value = defaultText;
+      updateWordCount();
+
+      // Configure PDF.js Global Worker source using CDN worker
+      if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+
+      // --- EVENT LISTENERS ---
+
+      // 1. Textarea changes
+      el.textInput.addEventListener('input', () => {
+        updateWordCount();
+      });
+
+      // 2. Clear text button
+      el.clearTextBtn.addEventListener('click', () => {
+        el.textInput.value = '';
+        el.fileUpload.value = '';
+        el.fileNameLabel.textContent = 'Sin archivo cargado';
+        updateWordCount();
+        el.textInput.focus();
+      });
+
+      // 3. File upload button (Multi-format Router)
+      el.fileUpload.addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const ext = file.name.split('.').pop().toLowerCase();
+        el.fileNameLabel.textContent = file.name;
+
+        showLoading("Procesando archivo...");
+
+        try {
+          const reader = new FileReader();
+
+          if (ext === 'txt') {
+            reader.onload = (e) => {
+              el.textInput.value = e.target.result;
+              updateWordCount();
+              hideLoading();
+            };
+            reader.readAsText(file);
+          } 
+          else if (ext === 'pdf') {
+            reader.onload = async (e) => {
+              try {
+                const arrayBuffer = e.target.result;
+                const text = await parsePDF(arrayBuffer);
+                el.textInput.value = text;
+                updateWordCount();
+              } catch (err) {
+                alert("Error al analizar el archivo PDF. Asegúrate de que no tenga contraseña o esté escaneado puramente como imágenes.");
+                console.error(err);
+              } finally {
+                hideLoading();
+              }
+            };
+            reader.readAsArrayBuffer(file);
+          }
+          else if (ext === 'docx') {
+            reader.onload = async (e) => {
+              try {
+                const arrayBuffer = e.target.result;
+                const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+                el.textInput.value = result.value;
+                updateWordCount();
+              } catch (err) {
+                alert("Error al analizar el archivo Word (.docx).");
+                console.error(err);
+              } finally {
+                hideLoading();
+              }
+            };
+            reader.readAsArrayBuffer(file);
+          }
+          else if (ext === 'epub') {
+            reader.onload = async (e) => {
+              try {
+                const arrayBuffer = e.target.result;
+                const text = await parseEPUB(arrayBuffer);
+                el.textInput.value = text;
+                updateWordCount();
+              } catch (err) {
+                alert("Error al analizar el archivo EPUB. Puede que esté encriptado (DRM).");
+                console.error(err);
+              } finally {
+                hideLoading();
+              }
+            };
+            reader.readAsArrayBuffer(file);
+          }
+          else {
+            alert("Formato de archivo no soportado.");
+            hideLoading();
+          }
+        } catch (err) {
+          alert("Error general al cargar el archivo.");
+          console.error(err);
+          hideLoading();
+        }
+      });
+
+      // 4. PPM input slider
+      el.ppmInput.addEventListener('input', (event) => {
+        state.ppm = parseInt(event.target.value, 10);
+        el.ppmValDisplay.textContent = `${state.ppm} PPM`;
+      });
+
+      // 5. Font size slider (Config View)
+      el.fontSizeInput.addEventListener('input', (event) => {
+        const val = parseFloat(event.target.value);
+        updateFontSize(val);
+      });
+
+      // 6. Font selector
+      el.fontCtrlGroup.addEventListener('click', (event) => {
+        const btn = event.target.closest('button');
+        if (!btn) return;
+
+        el.fontCtrlGroup.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        state.font = btn.dataset.font;
+        updateAppAppearance();
+      });
+
+      // 7. Theme selector
+      el.themeCtrlGroup.addEventListener('click', (event) => {
+        const btn = event.target.closest('button');
+        if (!btn) return;
+
+        el.themeCtrlGroup.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        state.theme = btn.dataset.theme;
+        updateAppAppearance();
+      });
+
+      // 8. Help accordion toggle
+      el.helpToggle.addEventListener('click', () => {
+        el.helpToggle.classList.toggle('active');
+        el.helpContent.classList.toggle('hidden-element');
+      });
+
+      // 9. Navigation controls inside reading
+      el.startReadingBtn.addEventListener('click', () => {
+        startReadingFlow();
+      });
+
+      el.exitReadingBtn.addEventListener('click', () => {
+        stopReadingFlow();
+      });
+
+      el.playPauseBtn.addEventListener('click', () => {
+        togglePlayPause();
+      });
+
+      el.prev5Btn.addEventListener('click', () => {
+        navigateWords(-5);
+      });
+
+      el.next5Btn.addEventListener('click', () => {
+        navigateWords(5);
+      });
+
+      // Real-time sizing pills in reading view
+      el.decFontBtn.addEventListener('click', () => {
+        const newVal = Math.max(1.5, state.fontSize - 0.2);
+        updateFontSize(newVal);
+      });
+
+      el.incFontBtn.addEventListener('click', () => {
+        const newVal = Math.min(5.5, state.fontSize + 0.2);
+        updateFontSize(newVal);
+      });
+
+      // Keyboard navigation (for convenience on desktop and external iPad keyboards)
+      document.addEventListener('keydown', (event) => {
+        if (el.readingView.classList.contains('hidden')) return;
+
+        if (event.code === 'Space') {
+          event.preventDefault();
+          togglePlayPause();
+        } else if (event.code === 'ArrowLeft') {
+          navigateWords(-5);
+        } else if (event.code === 'ArrowRight') {
+          navigateWords(5);
+        } else if (event.code === 'Escape') {
+          stopReadingFlow();
+        }
+      });
+
+      // --- DOCUMENT PARSERS ---
+
+      // PDF text extraction using PDF.js
+      async function parsePDF(arrayBuffer) {
+        if (typeof pdfjsLib === 'undefined') {
+          throw new Error("Librería PDF.js no disponible.");
+        }
+
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        let fullText = "";
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          
+          let lastY = -1;
+          let pageText = "";
+          for (let item of textContent.items) {
+            // Inserta salto de línea si el eje Y cambia significativamente
+            if (lastY !== -1 && Math.abs(item.transform[5] - lastY) > 8) {
+              pageText += "\n";
+            }
+            pageText += item.str + " ";
+            lastY = item.transform[5];
+          }
+          fullText += pageText + "\n";
+        }
+
+        if (!fullText.trim()) {
+          throw new Error("No se pudo extraer texto legible del PDF.");
+        }
+        return fullText;
+      }
+
+      // EPUB parser using JSZip and DOMParser
+      async function parseEPUB(arrayBuffer) {
+        if (typeof JSZip === 'undefined') {
+          throw new Error("Librería JSZip no disponible.");
+        }
+
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        
+        // 1. Encuentra container.xml
+        const containerFile = zip.file("META-INF/container.xml");
+        if (!containerFile) throw new Error("No es un EPUB válido (falta container.xml)");
+        
+        const containerXmlStr = await containerFile.async("text");
+        const parser = new DOMParser();
+        const containerDoc = parser.parseFromString(containerXmlStr, "text/xml");
+        const rootfile = containerDoc.querySelector("rootfile");
+        if (!rootfile) throw new Error("No es un EPUB válido (falta rootfile en container.xml)");
+        
+        const opfPath = rootfile.getAttribute("full-path");
+        
+        // Carpeta base del archivo OPF para mapear rutas relativas
+        let opfDir = "";
+        if (opfPath.includes("/")) {
+          opfDir = opfPath.substring(0, opfPath.lastIndexOf("/")) + "/";
+        }
+        
+        const resolvePath = (relativeHref) => {
+          let decodedHref = decodeURIComponent(relativeHref);
+          if (decodedHref.startsWith("/")) return decodedHref.substring(1);
+          
+          const combined = opfDir + decodedHref;
+          const parts = combined.split("/");
+          const resolved = [];
+          for (let part of parts) {
+            if (part === "." || part === "") continue;
+            if (part === "..") {
+              resolved.pop();
+            } else {
+              resolved.push(part);
+            }
+          }
+          return resolved.join("/");
+        };
+
+        // 2. Lee el manifiesto OPF
+        const opfFile = zip.file(opfPath);
+        if (!opfFile) throw new Error("No se encuentra el archivo OPF");
+        
+        const opfXmlStr = await opfFile.async("text");
+        const opfDoc = parser.parseFromString(opfXmlStr, "text/xml");
+        
+        // 3. Mapea items del manifest
+        const manifestItems = {};
+        opfDoc.querySelectorAll("manifest > item").forEach(item => {
+          const id = item.getAttribute("id");
+          const href = item.getAttribute("href");
+          const mediaType = item.getAttribute("media-type");
+          manifestItems[id] = { href, mediaType };
+        });
+        
+        // 4. Lee el spine (orden de lectura)
+        const spineIds = Array.from(opfDoc.querySelectorAll("spine > itemref")).map(ref => {
+          return ref.getAttribute("idref");
+        });
+        
+        // 5. Extrae textos XHTML
+        let combinedText = "";
+        for (let idref of spineIds) {
+          const item = manifestItems[idref];
+          if (item && (item.mediaType.includes("html") || item.mediaType.includes("xml"))) {
+            const zipPath = resolvePath(item.href);
+            const zipFile = zip.file(zipPath);
+            if (zipFile) {
+              const htmlStr = await zipFile.async("text");
+              const htmlDoc = parser.parseFromString(htmlStr, "text/html");
+              
+              // Elimina código, estilos y metadata
+              htmlDoc.querySelectorAll("script, style, head, svg, nav").forEach(el => el.remove());
+              
+              const text = htmlDoc.body ? htmlDoc.body.textContent : htmlDoc.documentElement.textContent;
+              if (text) {
+                combinedText += text.trim() + "\n\n";
+              }
+            }
+          }
+        }
+        
+        if (!combinedText.trim()) {
+          throw new Error("No se pudo extraer texto del EPUB.");
+        }
+        return combinedText;
+      }
+
+      // --- CORE FUNCTIONS ---
+
+      // Display loading overlay
+      function showLoading(message) {
+        el.loadingMsg.textContent = message;
+        el.loadingOverlay.classList.remove('hidden-element');
+      }
+
+      // Hide loading overlay
+      function hideLoading() {
+        el.loadingOverlay.classList.add('hidden-element');
+      }
+
+      // Calculate total words in textarea
+      function updateWordCount() {
+        const text = el.textInput.value.trim();
+        if (text === '') {
+          el.wordCountLabel.textContent = '0 palabras';
+          return 0;
+        }
+        const tokens = text.split(/\s+/);
+        el.wordCountLabel.textContent = `${tokens.length} palabra${tokens.length !== 1 ? 's' : ''}`;
+        return tokens.length;
+      }
+
+      // Synchronize state font and theme to body / app wrapper classes
+      function updateAppAppearance() {
+        el.app.classList.remove('font-sans', 'font-mono');
+        el.app.classList.add(`font-${state.font}`);
+
+        el.app.classList.remove('theme-oled-dark', 'theme-light', 'theme-sepia');
+        document.body.classList.remove('theme-oled-dark', 'theme-light', 'theme-sepia');
+        
+        el.app.classList.add(`theme-${state.theme}`);
+        document.body.classList.add(`theme-${state.theme}`);
+
+        // Set theme color metadata for iOS status bar styling
+        const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeColorMeta) {
+          if (state.theme === 'oled-dark') {
+            themeColorMeta.setAttribute('content', '#000000');
+          } else if (state.theme === 'light') {
+            themeColorMeta.setAttribute('content', '#F2F2F7');
+          } else if (state.theme === 'sepia') {
+            themeColorMeta.setAttribute('content', '#F4ECD8');
+          }
+        }
+      }
+
+      // Update font size across variables and settings
+      function updateFontSize(val) {
+        state.fontSize = val;
+        el.app.style.setProperty('--rsvp-font-size', `${val}rem`);
+        el.fontSizeInput.value = val;
+        el.fontSizeValDisplay.textContent = `${val.toFixed(1)}rem`;
+      }
+
+      // Set up variables, tokenize and transit views
+      function startReadingFlow() {
+        const text = el.textInput.value.trim();
+        if (text === '') {
+          alert('Por favor, escribe, pega o carga algún texto para poder leer.');
+          return;
+        }
+
+        state.text = text;
+        state.words = text.split(/\s+/).filter(w => w.length > 0);
+        state.currentIndex = 0;
+        state.isPlaying = false;
+
+        renderActiveWord();
+        updateProgressUI();
+        setPlayState(false);
+
+        el.configView.classList.add('hidden');
+        el.readingView.classList.remove('hidden');
+      }
+
+      // Go back to config view
+      function stopReadingFlow() {
+        pauseRSVPEngine();
+        el.readingView.classList.add('hidden');
+        el.configView.classList.remove('hidden');
+      }
+
+      // Play / Pause toggle
+      function togglePlayPause() {
+        if (state.isPlaying) {
+          setPlayState(false);
+          pauseRSVPEngine();
+        } else {
+          setPlayState(true);
+          playRSVPEngine();
+        }
+      }
+
+      // Set play pause visual button state
+      function setPlayState(playing) {
+        state.isPlaying = playing;
+        if (playing) {
+          el.playIconSvg.classList.add('hidden-element');
+          el.pauseIconSvg.classList.remove('hidden-element');
+          el.playPauseStateLabel.textContent = 'PAUSAR';
+        } else {
+          el.playIconSvg.classList.remove('hidden-element');
+          el.pauseIconSvg.classList.add('hidden-element');
+          el.playPauseStateLabel.textContent = 'REPRODUCIR';
+        }
+      }
+
+      // Dynamic delay calculator
+      function calculateDelayForWord(word) {
+        const baseDelay = 60000 / state.ppm;
+        let finalDelay = baseDelay;
+
+        // Check clean punctuation mapping
+        if (/[.!?]$/.test(word)) {
+          finalDelay = baseDelay * 2.2;
+        } else if (/[;:,]$/.test(word)) {
+          finalDelay = baseDelay * 1.5;
+        }
+
+        // Cumulative length constraint (greater than 10 characters)
+        if (word.length > 10) {
+          finalDelay = finalDelay * 1.3;
+        }
+
+        return finalDelay;
+      }
+
+      // ORP index calculation
+      function getOrpIndexForWord(word) {
+        const len = word.length;
+        if (len === 1) return 0;
+        if (len >= 2 && len <= 5) return 1;
+        if (len >= 6 && len <= 9) return 2;
+        if (len >= 10 && len <= 13) return 3;
+        return 4; // Length > 13
+      }
+
+      // Render the current word split by ORP character
+      function renderActiveWord() {
+        if (state.words.length === 0) return;
+
+        const currentWord = state.words[state.currentIndex];
+        const orpIdx = getOrpIndexForWord(currentWord);
+
+        const leftStr = currentWord.substring(0, orpIdx);
+        const orpChar = currentWord.charAt(orpIdx) || '';
+        const rightStr = currentWord.substring(orpIdx + 1);
+
+        el.wordLeft.textContent = leftStr;
+        el.wordOrp.textContent = orpChar;
+        el.wordRight.textContent = rightStr;
+      }
+
+      // Update progress fill and numerical stats labels
+      function updateProgressUI() {
+        const total = state.words.length;
+        const current = total > 0 ? state.currentIndex + 1 : 0;
+        
+        const pct = total > 0 ? (current / total) * 100 : 0;
+        el.readingProgressFill.style.width = `${pct}%`;
+
+        el.readingStatsTxt.textContent = `${current} / ${total}`;
+      }
+
+      // Loop manager: setTimeout implementation
+      function playRSVPEngine() {
+        if (state.currentIndex >= state.words.length) {
+          setPlayState(false);
+          state.currentIndex = 0;
+          updateProgressUI();
+          renderActiveWord();
+          return;
+        }
+
+        renderActiveWord();
+        updateProgressUI();
+
+        const currentWord = state.words[state.currentIndex];
+        const nextWordDelay = calculateDelayForWord(currentWord);
+
+        state.timerId = setTimeout(() => {
+          state.currentIndex++;
+          playRSVPEngine();
+        }, nextWordDelay);
+      }
+
+      // Pause loop manager
+      function pauseRSVPEngine() {
+        if (state.timerId) {
+          clearTimeout(state.timerId);
+          state.timerId = null;
+        }
+      }
+
+      // Word navigation adjustments
+      function navigateWords(offset) {
+        pauseRSVPEngine();
+
+        state.currentIndex += offset;
+        if (state.currentIndex < 0) {
+          state.currentIndex = 0;
+        } else if (state.currentIndex >= state.words.length) {
+          state.currentIndex = state.words.length - 1;
+        }
+
+        renderActiveWord();
+        updateProgressUI();
+
+        if (state.isPlaying) {
+          playRSVPEngine();
+        }
+      }
+
+      // Set default visual states
+      updateAppAppearance();
+      updateFontSize(state.fontSize);
+
+    });
+  </script>
+</body>
+</html>
