@@ -992,6 +992,7 @@
 
     /* Guided Highlight Viewport */
     .highlight-viewport {
+      position: relative; /* Makes .highlight-viewport the offsetParent for spans, so span.offsetTop is container-relative — enables zero-thrash scroll caching */
       width: 100%;
       flex: 1;
       overflow-y: auto;
@@ -1000,7 +1001,7 @@
       box-sizing: border-box;
       line-height: 1.8;
       font-size: var(--highlight-font-size, 1.35rem);
-      text-align: justify;
+      text-align: left;
       transition: background-color 0.4s ease, color 0.4s ease;
       -webkit-user-select: text;
       user-select: text;
@@ -1081,7 +1082,7 @@
               <span id="ppm-val-display" class="setting-value">400 PPM</span>
             </div>
             <div class="slider-wrapper">
-              <input type="range" id="ppm-input" min="100" max="2000" step="25" value="400" aria-label="Velocidad en palabras por minuto">
+              <input type="range" id="ppm-input" min="100" max="600" step="50" value="400" aria-label="Velocidad en palabras por minuto">
             </div>
           </div>
 
@@ -1109,8 +1110,8 @@
           <div class="setting-row">
             <div class="setting-label">Modo de Lectura</div>
             <div class="segmented-control" id="mode-ctrl-group">
-              <button type="button" class="active" data-mode="rsvp">RSVP (Palabra a Palabra)</button>
-              <button type="button" data-mode="highlight">Resaltado Guiado</button>
+              <button type="button" data-mode="rsvp">RSVP (Palabra a Palabra)</button>
+              <button type="button" class="active" data-mode="highlight">Resaltado Guiado</button>
             </div>
           </div>
 
@@ -1240,15 +1241,15 @@
 
       <!-- Controls navigation -->
       <div class="reading-footer-controls">
-        <!-- Page Prev [<- Pág] -->
+        <!-- Speed Down [ - VEL ] -->
         <div class="nav-btn-container">
-          <button id="prev-page-btn" class="control-btn-tactile" aria-label="Retroceder página">
+          <button id="dec-ppm-btn" class="control-btn-tactile" aria-label="Reducir velocidad">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="11 19 2 12 11 5 11 19"></polygon>
-              <line x1="22" y1="5" x2="22" y2="19"></line>
+              <circle cx="12" cy="12" r="9"></circle>
+              <line x1="8" y1="12" x2="16" y2="12"></line>
             </svg>
           </button>
-          <span class="btn-label-helper">-1 PÁG</span>
+          <span class="btn-label-helper">- VEL</span>
         </div>
 
         <!-- Back 5 -->
@@ -1278,15 +1279,16 @@
           <span class="btn-label-helper">+5 PALABRAS</span>
         </div>
 
-        <!-- Page Next [Pág ->] -->
+        <!-- Speed Up [ + VEL ] -->
         <div class="nav-btn-container">
-          <button id="next-page-btn" class="control-btn-tactile" aria-label="Avanzar página">
+          <button id="inc-ppm-btn" class="control-btn-tactile" aria-label="Aumentar velocidad">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="13 19 22 12 13 5 13 19"></polygon>
-              <line x1="2" y1="5" x2="2" y2="19"></line>
+              <circle cx="12" cy="12" r="9"></circle>
+              <line x1="12" y1="8" x2="12" y2="16"></line>
+              <line x1="8" y1="12" x2="16" y2="12"></line>
             </svg>
           </button>
-          <span class="btn-label-helper">+1 PÁG</span>
+          <span class="btn-label-helper">+ VEL</span>
         </div>
       </div>
     </div>
@@ -1313,14 +1315,18 @@
         font: 'sans',      // 'sans' | 'mono'
         theme: 'oled-dark', // 'oled-dark' | 'light' | 'sepia'
         fontSize: 3.5,      // rem
-        readingMode: 'rsvp', // 'rsvp' | 'highlight'
+        readingMode: 'highlight', // 'rsvp' | 'highlight'
         lastScrollOffsetTop: null,
         currentFileName: '',
         currentBookId: '',
         chapters: [],
         prevHighlightedIndex: undefined,
         lastSaveTime: 0,
-        lastUIUpdateTime: 0
+        lastUIUpdateTime: 0,
+        wordOffsets: null,
+        animationFrameId: null,
+        wordDelayRemaining: 0,
+        lastTickTime: 0
       };
 
       // --- DEFAULT SEED TEXT ---
@@ -1367,14 +1373,14 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
         wordLeft: document.getElementById('word-left'),
         wordOrp: document.getElementById('word-orp'),
         wordRight: document.getElementById('word-right'),
-        prevPageBtn: document.getElementById('prev-page-btn'),
+        decPpmBtn: document.getElementById('dec-ppm-btn'),
         prev5Btn: document.getElementById('prev-5-btn'),
         playPauseBtn: document.getElementById('play-pause-btn'),
         playIconSvg: document.getElementById('play-icon-svg'),
         pauseIconSvg: document.getElementById('pause-icon-svg'),
         playPauseStateLabel: document.getElementById('play-pause-state-label'),
         next5Btn: document.getElementById('next-5-btn'),
-        nextPageBtn: document.getElementById('next-page-btn'),
+        incPpmBtn: document.getElementById('inc-ppm-btn'),
         loadingOverlay: document.getElementById('loading-overlay'),
         loadingMsg: document.getElementById('loading-msg')
       };
@@ -1573,12 +1579,20 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
         navigateWords(5);
       });
 
-      el.prevPageBtn.addEventListener('click', () => {
-        navigateWords(-300);
+      // Adjust PPM from the reading view and sync config slider + stats display
+      function adjustReadingPPM(delta) {
+        state.ppm = Math.max(100, Math.min(600, state.ppm + delta));
+        el.ppmInput.value = state.ppm;
+        el.ppmValDisplay.textContent = `${state.ppm} PPM`;
+        updateProgressUI(true); // refresh stats bar so PPM label updates immediately
+      }
+
+      el.decPpmBtn.addEventListener('click', () => {
+        adjustReadingPPM(-50);
       });
 
-      el.nextPageBtn.addEventListener('click', () => {
-        navigateWords(300);
+      el.incPpmBtn.addEventListener('click', () => {
+        adjustReadingPPM(50);
       });
 
       // Real-time sizing pills in reading view
@@ -1718,20 +1732,25 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
           let lastY = -1;
           let pageText = "";
           for (let item of textContent.items) {
-            // Inserta salto de línea si el eje Y cambia significativamente
+            if (!item.str) continue; // skip empty items
+
             if (lastY !== -1 && Math.abs(item.transform[5] - lastY) > 8) {
-              pageText += "\n";
+              // Large vertical gap (> 20px) = paragraph break; smaller = line break
+              pageText += Math.abs(item.transform[5] - lastY) > 20 ? "\n\n" : "\n";
             }
-            pageText += item.str + " ";
+            // Avoid double-spacing: only add trailing space if item doesn’t already end with one
+            pageText += item.str.endsWith(' ') ? item.str : item.str + " ";
             lastY = item.transform[5];
           }
-          fullText += pageText + "\n";
+          // Double newline between pages creates proper paragraph boundaries
+          fullText += pageText + "\n\n";
         }
 
         if (!fullText.trim()) {
           throw new Error("No se pudo extraer texto legible del PDF.");
         }
-        return fullText;
+        // Normalize: collapse multiple consecutive spaces, strip carriage returns
+        return fullText.replace(/\r/g, '').replace(/ {2,}/g, ' ');
       }
 
       // EPUB parser using JSZip and DOMParser
@@ -1854,6 +1873,7 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
 
       // Synchronize state font and theme to body / app wrapper classes
       function updateAppAppearance() {
+        clearWordOffsetsCache();
         el.app.classList.remove('font-sans', 'font-mono');
         el.app.classList.add(`font-${state.font}`);
 
@@ -1878,6 +1898,7 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
 
       // Update font size across variables and settings
       function updateFontSize(val) {
+        clearWordOffsetsCache();
         state.fontSize = val;
         el.app.style.setProperty('--rsvp-font-size', `${val}rem`);
         
@@ -1922,6 +1943,15 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
           state.currentIndex = 0;
         }
 
+        // Show the reading view BEFORE the first renderActiveFrame() call.
+        // While reading-view has display:none (class 'hidden'), span.offsetTop
+        // returns 0 for all elements — the scroll cache would be all zeros and
+        // centering would never work. Showing it first forces a correct layout.
+        // The browser does NOT paint between these synchronous lines, so there
+        // is no visible flash.
+        el.configView.classList.add('hidden');
+        el.readingView.classList.remove('hidden');
+
         // Viewport Visibility toggle based on Mode
         if (state.readingMode === 'rsvp') {
           el.rsvpViewport.classList.remove('hidden-element');
@@ -1931,12 +1961,9 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
           el.highlightViewport.classList.remove('hidden-element');
         }
 
-        renderActiveFrame();
+        renderActiveFrame();  // offsetTop cache now built with real layout values
         updateProgressUI();
         setPlayState(false);
-
-        el.configView.classList.add('hidden');
-        el.readingView.classList.remove('hidden');
       }
 
       function saveCurrentProgress(force = false) {
@@ -1949,8 +1976,27 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
         }
       }
 
+      function clearWordOffsetsCache() {
+        state.wordOffsets = null;
+        state.lastScrollOffsetTop = null; // reset scroll tracking so it re-centers after layout invalidation
+      }
+
+      function getWordOffsetTop(index) {
+        if (!state.wordOffsets && state.words.length > 0) {
+          const len = state.words.length;
+          state.wordOffsets = new Int32Array(len);
+          // Fast single-pass read from DOM to avoid layout thrashing
+          for (let i = 0; i < len; i++) {
+            const span = document.getElementById(`word-${i}`);
+            state.wordOffsets[i] = span ? span.offsetTop : 0;
+          }
+        }
+        return state.wordOffsets ? (state.wordOffsets[index] || 0) : 0;
+      }
+
       // Structural Tokenizer & Highlight Viewport UI generator
       function tokenizeAndPrepareUI() {
+        clearWordOffsetsCache();
         // Primary segmentation: split on double newlines to isolate paragraphs
         const paragraphs = state.text.split(/\n\s*\n+/);
         state.words = [];
@@ -2099,27 +2145,51 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
         let finalDelay = baseDelay;
         const val = wordObj.value;
 
-        // Cierres de oración: strong punctuation ends -> x2.2
-        if (/[.!?]$/.test(val)) {
-          finalDelay = finalDelay * 2.2;
-        }
-        // Puntuación intermedia: intermediate pauses -> x1.5
-        else if (/[;:,]$/.test(val)) {
-          finalDelay = finalDelay * 1.5;
-        }
+        if (state.readingMode === 'rsvp') {
+          // ── RSVP: strong pauses (reader has no surrounding context) ──
+          // Sentence end (.!?) → ×2.2
+          if (/[.!?]$/.test(val)) {
+            finalDelay *= 2.2;
+          }
+          // Intermediate punctuation (,;:) → ×1.5
+          else if (/[;:,]$/.test(val)) {
+            finalDelay *= 1.5;
+          }
+          // Long word buffer (>10 chars) → ×1.3
+          if (val.length > 10) {
+            finalDelay *= 1.3;
+          }
+          // Paragraph structural brake → +1100 ms
+          if (wordObj.isParagraphEnd) {
+            finalDelay += 1100;
+          }
 
-        // Búfer por longitud: words longer than 10 characters -> x1.3
-        if (val.length > 10) {
-          finalDelay = finalDelay * 1.3;
-        }
+        } else {
+          // ── Guided Highlight: lighter pauses + character-proportional timing ──
+          //
+          // Character-proportional timing: a word's display time scales with its
+          // length. Average Spanish word ≈ 5 chars → ×1.0 multiplier.
+          // Clamp between 0.5× (very short words) and 2.0× (very long words).
+          //
+          //  "de"  (2)  → ×0.5  (fast — simple glue word)
+          //  "masa" (4) → ×0.8
+          //  "humana" (6) → ×1.2
+          //  "tratadas" (8) → ×1.6
+          //  "estadísticamente" (16) → ×2.0 (capped)
+          const charScale = Math.max(0.5, Math.min(2.0, val.length / 5));
+          finalDelay = baseDelay * charScale;
 
-        // Frenazo estructural de párrafo: paragraph end absolute delay
-        if (wordObj.isParagraphEnd) {
-          if (state.readingMode === 'rsvp') {
-            finalDelay = finalDelay + 1100;
-          } else {
-            // In Guided Highlight, scale paragraph end delay proportionally to avoid static lag at high speeds (e.g. 2.2x base word time)
-            finalDelay = finalDelay * 2.2;
+          // Sentence end (.!?) → ×1.8  (noticeable beat at full stop)
+          if (/[.!?]$/.test(val)) {
+            finalDelay *= 1.8;
+          }
+          // Comma / semicolon / colon → ×1.3  (brief breath)
+          else if (/[;:,]$/.test(val)) {
+            finalDelay *= 1.3;
+          }
+          // Paragraph end → ×1.8
+          if (wordObj.isParagraphEnd) {
+            finalDelay *= 1.8;
           }
         }
 
@@ -2183,13 +2253,22 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
             activeSpan.classList.add('highlight-active');
             state.prevHighlightedIndex = state.currentIndex;
 
-            // Autoscroll: Scroll center only on line change
-            // Avoid Safari scroll animation queue congestion by using behavior: 'auto' (instant) during autoplay, 
-            // and behavior: 'smooth' only when clicking manually or pausing.
-            if (state.lastScrollOffsetTop !== activeSpan.offsetTop) {
-              const scrollBehavior = state.isPlaying ? 'auto' : 'smooth';
-              activeSpan.scrollIntoView({ behavior: scrollBehavior, block: 'center' });
-              state.lastScrollOffsetTop = activeSpan.offsetTop;
+            // Autoscroll: use pre-cached positions (O(1) array lookup, zero live DOM reads).
+            // position:relative on .highlight-viewport ensures span.offsetTop is
+            // container-relative, so the cached value maps directly to scrollTop math.
+            const spanAbsTop = getWordOffsetTop(state.currentIndex);
+
+            // Only update scrollTop when the word has moved to a different visual line
+            if (state.lastScrollOffsetTop !== spanAbsTop) {
+              const containerH = el.highlightViewport.clientHeight;
+              const targetScrollTop = Math.max(0, spanAbsTop - containerH / 2 + 20);
+
+              if (state.isPlaying) {
+                el.highlightViewport.scrollTop = targetScrollTop;
+              } else {
+                el.highlightViewport.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+              }
+              state.lastScrollOffsetTop = spanAbsTop;
             }
           }
         }
@@ -2211,39 +2290,89 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
           const totalPages = Math.max(1, Math.ceil(total / wordsPerPage));
           const currentPage = Math.max(1, Math.min(totalPages, Math.floor(state.currentIndex / wordsPerPage) + 1));
 
-          el.readingStatsTxt.textContent = `Pág. ${currentPage} de ${totalPages} | Palabras: ${current} / ${total}`;
+          el.readingStatsTxt.textContent = `Pág. ${currentPage} de ${totalPages} | ${current} / ${total} | ${state.ppm} PPM`;
           updateDropdownToCurrentChapter();
           state.lastUIUpdateTime = now;
         }
       }
 
-      // Loop manager: setTimeout implementation
+      // Loop manager: requestAnimationFrame high-precision implementation
       function playRSVPEngine() {
+        if (state.animationFrameId) {
+          cancelAnimationFrame(state.animationFrameId);
+          state.animationFrameId = null;
+        }
+        if (state.timerId) {
+          clearTimeout(state.timerId);
+          state.timerId = null;
+        }
+
         if (state.currentIndex >= state.words.length) {
           setPlayState(false);
           state.currentIndex = 0;
           state.lastScrollOffsetTop = null; // Reset autoscroll tracking
-          updateProgressUI();
+          updateProgressUI(true);
           renderActiveFrame();
-          saveCurrentProgress();
+          saveCurrentProgress(true);
           return;
         }
+
+        state.lastTickTime = performance.now();
+        const currentWordObj = state.words[state.currentIndex];
+        state.wordDelayRemaining = calculateDelayForWord(currentWordObj);
 
         renderActiveFrame();
         updateProgressUI();
         saveCurrentProgress();
 
-        const currentWordObj = state.words[state.currentIndex];
-        const nextWordDelay = calculateDelayForWord(currentWordObj);
+        function tick(now) {
+          if (!state.isPlaying) return;
 
-        state.timerId = setTimeout(() => {
-          state.currentIndex++;
-          playRSVPEngine();
-        }, nextWordDelay);
+          const delta = now - state.lastTickTime;
+          state.lastTickTime = now;
+
+          state.wordDelayRemaining -= delta;
+
+          let advanced = false;
+          // while loop: advance ALL words owed for this time delta, not just one.
+          // Carry-over (overrun) compensates for frame-time variance, keeping the
+          // actual rate accurate regardless of rAF frequency.
+          // This also removes the 1-word-per-frame cap (~3600 WPM at 60fps).
+          while (state.wordDelayRemaining <= 0) {
+            state.currentIndex++;
+            if (state.currentIndex >= state.words.length) {
+              setPlayState(false);
+              state.currentIndex = 0;
+              state.lastScrollOffsetTop = null;
+              updateProgressUI(true);
+              renderActiveFrame();
+              saveCurrentProgress(true);
+              return;
+            }
+            const nextWordObj = state.words[state.currentIndex];
+            const overrun = state.wordDelayRemaining; // negative ms: time debt from this frame
+            state.wordDelayRemaining = calculateDelayForWord(nextWordObj) + overrun; // compensate
+            advanced = true;
+          }
+
+          if (advanced) {
+            renderActiveFrame();
+            updateProgressUI();
+            saveCurrentProgress();
+          }
+
+          state.animationFrameId = requestAnimationFrame(tick);
+        }
+
+        state.animationFrameId = requestAnimationFrame(tick);
       }
 
       // Pause loop manager
       function pauseRSVPEngine() {
+        if (state.animationFrameId) {
+          cancelAnimationFrame(state.animationFrameId);
+          state.animationFrameId = null;
+        }
         if (state.timerId) {
           clearTimeout(state.timerId);
           state.timerId = null;
@@ -2343,6 +2472,8 @@ Puedes cargar tus propios archivos locales (.txt, .pdf, .epub, .docx) pulsando e
       // Set default visual states
       updateAppAppearance();
       updateFontSize(state.fontSize);
+
+      window.addEventListener('resize', clearWordOffsetsCache);
 
     });
   </script>
